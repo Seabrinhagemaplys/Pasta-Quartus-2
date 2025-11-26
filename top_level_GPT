@@ -1,0 +1,155 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+entity top_level is
+    port(
+        CLOCK_27   : in  std_logic;   -- Clock da placa DE2 (27 MHz)
+        KEY        : in  std_logic_vector(3 downto 0); -- Botões
+        SW         : in  std_logic_vector(9 downto 0); -- Chaves
+        LEDR       : out std_logic_vector(9 downto 0); -- LEDs vermelhos
+        LEDG       : out std_logic_vector(7 downto 0)  -- LEDs verdes
+    );
+end entity;
+
+architecture RTL of top_level is
+
+    signal clk               : std_logic;
+    signal reset             : std_logic;  -- reset ativo em '1'
+
+    -- Sinais entre controladora e caminho de dados
+    signal sinal_verde       : std_logic := '0';
+    signal sinal_amarelo     : std_logic := '0';
+    signal sinal_vermelho    : std_logic := '0';
+    signal night             : std_logic := '0';
+    signal clear_contador    : std_logic := '0';
+    signal sinal_count       : std_logic := '0';
+    
+    signal vetor_estado      : std_logic_vector(2 downto 0) := (others => '0');
+    signal vetor_proximo_estado : std_logic_vector(2 downto 0) := (others => '0');
+    
+    -- Declaração do divisor de clock
+    component divisor_clock is
+        port (
+            CLOCK_27MHz : in std_logic;
+            reset : in std_logic;
+            CLOCK_1Hz : out std_logic
+        );
+    end component;
+
+    -- Declaração do datapath
+    component data_path is
+        port (
+            pedestre         : in std_logic;
+            outro_pedestre   : in std_logic;
+            emergencia       : in std_logic;
+            outra_emergencia : in std_logic;
+            sinal_verde      : in std_logic;
+            sinal_amarelo    : in std_logic;
+            sinal_vermelho   : in std_logic;
+            ativar_night     : in std_logic;
+            resetar_contador : in std_logic;
+            clk              : in std_logic;
+            clear            : in std_logic;
+            led_virar_a_direita    : out std_logic;
+            led_sinal_vermelho     : out std_logic;
+            led_sinal_amarelo      : out std_logic;
+            led_sinal_verde        : out std_logic;
+            count                  : out std_logic
+        );
+    end component;
+    
+    -- Declaração da controladora
+    component controladora is
+        port (
+            pedestre        : in std_logic;
+            outro_pedestre  : in std_logic;
+            emergencia      : in std_logic;
+            outra_emergencia: in std_logic;
+            ativar_night    : in std_logic;
+            clk             : in std_logic;
+            reset           : in std_logic;
+            count           : in std_logic;
+            sinal_verde     : out std_logic;
+            sinal_amarelo   : out std_logic;
+            sinal_vermelho  : out std_logic;
+            night           : out std_logic;
+            clear_contador  : out std_logic;
+            vetor_estado    : out std_logic_vector (2 downto 0);
+            vetor_proximo_estado : out std_logic_vector (2 downto 0)
+        );
+    end component;
+
+    -- sinais de saída do datapath (locais para conectar LEDs)
+    signal dp_led_virar   : std_logic;
+    signal dp_led_vermelho: std_logic;
+    signal dp_led_amarelo : std_logic;
+    signal dp_led_verde   : std_logic;
+
+begin
+
+    -- OBS: reset ativo em '1' (altere se seus blocos esperam reset ativo em '0')
+    reset <= SW(6);
+
+    -- Instância do divisor de clock
+    div_clock: divisor_clock
+    port map (
+        CLOCK_27MHz => CLOCK_27,
+        reset => reset,
+        CLOCK_1Hz => clk
+    );
+
+    -- Instância do caminho de dados
+    caminho_de_dados: data_path
+    port map (
+        pedestre          => SW(0),
+        outro_pedestre    => SW(1),
+        emergencia        => SW(2),
+        outra_emergencia  => SW(3),
+        sinal_verde       => sinal_verde,
+        sinal_amarelo     => sinal_amarelo,
+        sinal_vermelho    => sinal_vermelho,
+        ativar_night      => night,
+        resetar_contador  => clear_contador,
+        clk               => clk,
+        clear             => reset,                 -- reset ativo em '1'
+        led_virar_a_direita => dp_led_virar,
+        led_sinal_vermelho  => dp_led_vermelho,
+        led_sinal_amarelo   => dp_led_amarelo,
+        led_sinal_verde     => dp_led_verde,
+        count               => sinal_count
+    );
+
+    -- Instância da controladora
+    C: controladora
+    port map(
+        pedestre          => SW(0),
+        outro_pedestre    => SW(1),
+        emergencia        => SW(2),
+        outra_emergencia  => SW(3),
+        ativar_night      => SW(4),
+        clk               => clk,
+        reset             => reset,
+        sinal_verde       => sinal_verde,
+        sinal_amarelo     => sinal_amarelo,
+        sinal_vermelho    => sinal_vermelho,
+        night             => night,
+        clear_contador    => clear_contador,
+        vetor_estado      => vetor_estado,
+        vetor_proximo_estado => vetor_proximo_estado,
+        count             => sinal_count
+    );
+
+    -- Mapear sinais do datapath para LEDs físicos; garanta todos os bits atribuídos
+    LEDR(0) <= dp_led_virar;        -- virar à direita
+    LEDR(1) <= dp_led_vermelho;     -- sinal vermelho
+    LEDR(2) <= dp_led_amarelo;      -- sinal amarelo
+    LEDR(3) <= dp_led_verde;        -- sinal verde
+    -- resto dos LEDs vermelhos desligados (ou use para debug)
+    LEDR(9 downto 4) <= (others => '0');
+
+    -- Use alguns LEDs verdes para mostrar vetor_estado como debug (opcional)
+    LEDG(2 downto 0) <= vetor_estado; -- [2] MSB .. [0] LSB
+    LEDG(7 downto 3) <= (others => '0');
+
+end RTL;
